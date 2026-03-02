@@ -1,0 +1,17 @@
+seed: 7
+dataset: fashion-mnist
+batch_size: 128
+epochs: 2
+learning_rate: 0.001
+train_subset: 12000
+val_subset: 3000
+power_watts: 5.0
+width_multipliers: [1.0, 0.75, 0.5]
+pruning_levels: [0.0, 0.25, 0.5]
+precisions: [fp32, fp16, int8]
+calibration_batches: 8
+memory_budgets_mb: [1.0, 2.0, 4.0]
+active_memory_budget_mb: 2.0
+max_energy_j: 0.02
+cpu_frequency_scale: 0.7
+output_dir: outputs
