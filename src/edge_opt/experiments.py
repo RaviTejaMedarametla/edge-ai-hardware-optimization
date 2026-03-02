@@ -56,6 +56,7 @@ def run_sweep(
     memory_budgets_mb: list[float],
     active_memory_budget_mb: float,
     latency_multiplier: float,
+    benchmark_repeats: int = 5,
 ) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -70,6 +71,7 @@ def run_sweep(
                 power_watts=power_watts,
                 precision=metric_precision,
                 latency_multiplier=latency_multiplier,
+                benchmark_repeats=benchmark_repeats,
             )
             violations = memory_violations(metrics.memory_mb, memory_budgets_mb)
             rejected = metrics.memory_mb > active_memory_budget_mb

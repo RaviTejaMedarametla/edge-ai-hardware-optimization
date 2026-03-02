@@ -8,8 +8,10 @@ from edge_opt.config import load_config
 from edge_opt.data import build_loaders
 from edge_opt.deploy import deployment_simulation
 from edge_opt.experiments import pareto_frontier, run_sweep, save_plots, train_model
+from edge_opt.hardware import estimate_layerwise_stats, precision_tradeoff_table, save_hardware_artifacts, summarize_hardware
 from edge_opt.metrics import collect_metrics, memory_violations
 from edge_opt.model import SmallCNN, set_deterministic
+from edge_opt.reporting import build_summary, write_outputs
 
 import torch
 
@@ -32,6 +34,8 @@ def main() -> None:
         batch_size=cfg.batch_size,
         train_subset=cfg.train_subset,
         val_subset=cfg.val_subset,
+        seed=cfg.dataloader_seed,
+        num_workers=cfg.num_workers,
     )
 
     baseline_model = SmallCNN()
@@ -51,6 +55,7 @@ def main() -> None:
         power_watts=cfg.power_watts,
         precision="fp32",
         latency_multiplier=latency_multiplier,
+        benchmark_repeats=cfg.benchmark_repeats,
     )
     baseline_violations = memory_violations(baseline_metrics.memory_mb, cfg.memory_budgets_mb)
 
@@ -66,37 +71,41 @@ def main() -> None:
         memory_budgets_mb=cfg.memory_budgets_mb,
         active_memory_budget_mb=cfg.active_memory_budget_mb,
         latency_multiplier=latency_multiplier,
+        benchmark_repeats=cfg.benchmark_repeats,
     )
 
     latency_frontier = pareto_frontier(sweep_df, x_col="latency_ms")
     energy_frontier = pareto_frontier(sweep_df, x_col="energy_proxy_j")
     save_plots(sweep_df, latency_frontier, energy_frontier, output_dir)
 
+
+    layerwise_df = estimate_layerwise_stats(baseline_model, batch_size=cfg.batch_size)
+    hardware_summary = summarize_hardware(
+        layerwise_df,
+        latency_ms=baseline_metrics.latency_ms,
+        memory_bandwidth_gbps=cfg.memory_bandwidth_gbps,
+    )
+    precision_df = precision_tradeoff_table(sweep_df)
+    save_hardware_artifacts(output_dir, layerwise_df, precision_df, hardware_summary)
+
     deploy_stats = deployment_simulation(baseline_model, val_loader, cpu_frequency_scale=cfg.cpu_frequency_scale)
 
-    summary = {
-        "baseline": {
-            **baseline_metrics.__dict__,
-            **baseline_violations,
-            "accepted_under_active_budget": baseline_metrics.memory_mb <= cfg.active_memory_budget_mb,
-        },
-        "memory_budgets_mb": cfg.memory_budgets_mb,
-        "active_memory_budget_mb": cfg.active_memory_budget_mb,
-        "cpu_frequency_scale": cfg.cpu_frequency_scale,
-        "latency_multiplier": latency_multiplier,
-        "study_rows": len(sweep_df),
-        "accepted_rows": int(sweep_df["accepted"].sum()),
-        "rejected_rows": int((~sweep_df["accepted"]).sum()),
-        "best_accuracy_accepted": float(sweep_df[sweep_df["accepted"]]["accuracy"].max()) if sweep_df["accepted"].any() else None,
-        "lowest_latency_ms_accepted": float(sweep_df[sweep_df["accepted"]]["latency_ms"].min()) if sweep_df["accepted"].any() else None,
-        "deployment": deploy_stats,
+    baseline_summary = {
+        **baseline_metrics.__dict__,
+        **baseline_violations,
+        "accepted_under_active_budget": baseline_metrics.memory_mb <= cfg.active_memory_budget_mb,
     }
+    summary = build_summary(
+        baseline=baseline_summary,
+        memory_budgets_mb=cfg.memory_budgets_mb,
+        active_memory_budget_mb=cfg.active_memory_budget_mb,
+        cpu_frequency_scale=cfg.cpu_frequency_scale,
+        latency_multiplier=latency_multiplier,
+        sweep_df=sweep_df,
+        deployment={**deploy_stats, **hardware_summary},
+    )
 
-    sweep_df.to_csv(output_dir / "sweep_results.csv", index=False)
-    latency_frontier.to_csv(output_dir / "pareto_frontier_latency.csv", index=False)
-    energy_frontier.to_csv(output_dir / "pareto_frontier_energy.csv", index=False)
-    with open(output_dir / "summary.json", "w", encoding="utf-8") as file:
-        json.dump(summary, file, indent=2)
+    write_outputs(output_dir, sweep_df, latency_frontier, energy_frontier, summary)
 
     print(json.dumps(summary, indent=2))
 

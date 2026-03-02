@@ -11,7 +11,14 @@ DATASETS = {
 }
 
 
-def build_loaders(dataset_name: str, batch_size: int, train_subset: int | None, val_subset: int | None) -> tuple[DataLoader, DataLoader]:
+def build_loaders(
+    dataset_name: str,
+    batch_size: int,
+    train_subset: int | None,
+    val_subset: int | None,
+    seed: int = 42,
+    num_workers: int = 2,
+) -> tuple[DataLoader, DataLoader]:
     if dataset_name not in DATASETS:
         msg = f"Unsupported dataset '{dataset_name}'. Use one of: {list(DATASETS)}"
         raise ValueError(msg)
@@ -30,7 +37,7 @@ def build_loaders(dataset_name: str, batch_size: int, train_subset: int | None, 
     if val_subset is not None:
         val_ds = Subset(val_ds, list(range(min(val_subset, len(val_ds)))))
 
-    generator = torch.Generator().manual_seed(42)
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2, generator=generator)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2)
+    generator = torch.Generator().manual_seed(seed)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, generator=generator)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_loader, val_loader
