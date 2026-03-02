@@ -12,6 +12,8 @@ from torch.utils.data import DataLoader
 class PerfMetrics:
     accuracy: float
     latency_ms: float
+    latency_std_ms: float
+    latency_p95_ms: float
     throughput_sps: float
     memory_mb: float
     energy_proxy_j: float
@@ -46,6 +48,13 @@ def measure_latency(model: nn.Module, sample_input: torch.Tensor, num_runs: int 
     return (elapsed / num_runs) * 1000.0
 
 
+
+
+def measure_latency_distribution(model: nn.Module, sample_input: torch.Tensor, repeats: int = 5, num_runs: int = 100, warmup: int = 10) -> tuple[float, float, float]:
+    latencies = [measure_latency(model, sample_input, num_runs=num_runs, warmup=warmup) for _ in range(repeats)]
+    latency_tensor = torch.tensor(latencies, dtype=torch.float32)
+    return float(latency_tensor.mean()), float(latency_tensor.std(unbiased=False)), float(torch.quantile(latency_tensor, 0.95))
+
 def model_memory_mb(model: nn.Module) -> float:
     total_bytes = 0
     for tensor in model.state_dict().values():
@@ -65,6 +74,7 @@ def collect_metrics(
     power_watts: float,
     precision: str,
     latency_multiplier: float = 1.0,
+    benchmark_repeats: int = 5,
 ) -> PerfMetrics:
     sample_batch, _ = next(iter(loader))
     sample_input = sample_batch.to(device)
@@ -72,7 +82,8 @@ def collect_metrics(
         sample_input = sample_input.half()
 
     accuracy = evaluate_accuracy(model, loader, device, precision=precision)
-    latency = measure_latency(model, sample_input) * latency_multiplier
+    latency_mean, latency_std, latency_p95 = measure_latency_distribution(model, sample_input, repeats=benchmark_repeats)
+    latency = latency_mean * latency_multiplier
     throughput = sample_input.shape[0] / (latency / 1000.0)
     memory = model_memory_mb(model)
     energy_proxy = (latency / 1000.0) * power_watts
@@ -80,6 +91,8 @@ def collect_metrics(
     return PerfMetrics(
         accuracy=accuracy,
         latency_ms=latency,
+        latency_std_ms=latency_std * latency_multiplier,
+        latency_p95_ms=latency_p95 * latency_multiplier,
         throughput_sps=throughput,
         memory_mb=memory,
         energy_proxy_j=energy_proxy,

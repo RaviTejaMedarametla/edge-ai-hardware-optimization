@@ -1,64 +1,99 @@
-# Edge AI Hardware Optimization (Low Power)
+# Edge AI Hardware Optimization
 
-This project is a stable, practical baseline for **hardware-aware AI optimization** on edge and semiconductor targets.
-It keeps implementation simple while modeling realistic deployment constraints: SRAM limits, low-power CPU operation, latency/energy tradeoffs, and precision-aware compression.
+Reference pipeline for evaluating compact CNN deployments under edge-device constraints.
+The repository prioritizes deterministic execution, measurable trade-offs, and low-complexity implementation suitable for iterative experimentation.
 
-## What this pipeline covers
+## Scope
 
-1. Train a compact CNN on MNIST or Fashion-MNIST.
-2. Record baseline accuracy, latency, throughput, memory, and energy proxy.
-3. Apply **structured channel pruning**.
-4. Evaluate **FP32**, **FP16**, and **INT8** variants.
-5. Simulate SRAM-constrained deployment with configurable budgets (1MB / 2MB / 4MB).
-6. Reject models above the active memory budget and report violations per budget.
-7. Simulate low-power CPU frequency scaling with an explicit latency multiplier.
-8. Sweep pruning and precision to generate tradeoff and Pareto analyses.
-9. Simulate batch vs streaming inference on CPU.
+The pipeline trains and evaluates a compact CNN on MNIST-family datasets and then applies constrained deployment analysis:
 
-## Why this matters for edge silicon
+1. Train a baseline model.
+2. Sweep structured channel-pruning levels.
+3. Evaluate FP32, FP16, and INT8 variants.
+4. Enforce SRAM-style memory budgets and mark rejected candidates.
+5. Measure latency, throughput, memory footprint, and energy proxy.
+6. Generate Pareto frontiers for latency-accuracy and energy-accuracy.
+7. Simulate lower CPU frequency operation and stream-vs-batch inference.
 
-Real edge hardware is constrained by:
-- **on-chip memory** (SRAM),
-- **power envelope**,
-- **inference latency requirements**.
+## System design motivations
 
-High accuracy alone is not enough. Models must satisfy memory and timing limits while preserving acceptable output quality. This repository demonstrates a simple but realistic path for making those tradeoffs measurable and reproducible.
+- **Single-model family**: A fixed network topology isolates pruning and precision effects from architecture search noise.
+- **Constraint-first filtering**: Memory budget checks run before frontier analysis so infeasible candidates do not distort operating-point selection.
+- **CPU-focused execution path**: The default environment reflects common edge integration constraints where accelerator access may be limited.
+- **Config-driven workflow**: Most experiment knobs are externalized in YAML to support repeatable benchmark sweeps.
 
-## Metrics and constraints
+## Architectural trade-offs
 
-For every candidate model:
-- **Accuracy**
-- **Latency (ms)**
-- **Throughput (samples/s)**
-- **Memory footprint (MB)**
-- **Energy proxy (J)** = `latency × configured power`
+- **Accuracy vs latency**: More aggressive pruning often reduces latency and memory at the cost of representational capacity.
+- **Precision vs stability**: FP16 and INT8 can reduce memory/compute cost, but quantization calibration quality directly affects accuracy retention.
+- **Determinism vs speed**: Deterministic settings improve reproducibility but can reduce backend autotuning opportunities.
+- **Simple metrics vs full hardware counters**: Current latency and energy outputs are software-level estimates; hardware counters must be integrated separately for final silicon sign-off.
 
-Constraint logic:
-- Report violations against each configured memory budget.
-- Mark candidates as rejected if they exceed `active_memory_budget_mb`.
-- Exclude rejected candidates from Pareto frontier generation.
+## Performance model and constraints
 
-## Visual outputs
+Per candidate, the pipeline reports:
 
-Generated under `outputs/`:
-- `accuracy_vs_latency.png`
-- `accuracy_vs_energy.png`
-- `accuracy_vs_memory.png`
-- `pareto_frontier_latency.csv`
-- `pareto_frontier_energy.csv`
+- Accuracy
+- Latency (ms)
+- Throughput (samples/s)
+- Model memory footprint (MB)
+- Energy proxy (J): `latency_seconds * power_watts`
 
-Rejected (memory-violating) candidates are shown separately in the plots.
+Constraint handling:
 
-## Project structure
+- `memory_budgets_mb`: reported as per-budget violation flags.
+- `active_memory_budget_mb`: hard acceptance threshold used in sweep summaries and Pareto filtering.
 
-- `scripts/run_pipeline.py` – end-to-end pipeline runner
-- `configs/default.yaml` – deterministic and constraint-aware settings
-- `src/edge_opt/model.py` – compact CNN + deterministic seed setup
-- `src/edge_opt/pruning.py` – structured channel pruning
-- `src/edge_opt/quantization.py` – FP16 + INT8 conversion
-- `src/edge_opt/metrics.py` – accuracy, latency, throughput, memory, energy, violations
-- `src/edge_opt/experiments.py` – sweep execution + plots + Pareto frontiers
-- `src/edge_opt/deploy.py` – batch/streaming deployment simulation + CPU scaling
+## Failure modes and bottlenecks
+
+- Dataset download or cache corruption can block startup.
+- DataLoader worker settings may be suboptimal on low-core hosts.
+- INT8 calibration with too few batches can bias activation ranges.
+- CPU frequency scaling is modeled, not measured from hardware telemetry.
+- Throughput estimates are sensitive to selected batch size and host load.
+
+## Scalability considerations
+
+- Sweep cardinality scales with `len(pruning_levels) * len(precisions)`.
+- Increasing subset sizes improves statistical confidence but increases runtime.
+- Additional architectures can be introduced without changing CLI behavior by extending internal model factories.
+
+## Assumptions
+
+- CPU-only execution path is representative of target deployment constraints.
+- Power draw is provided as a fixed scalar in configuration.
+- Model size from state dict is an acceptable first-order memory proxy.
+- MNIST/Fashion-MNIST are used as controlled benchmarking datasets.
+
+## Limitations
+
+- Hardware analysis is estimate-based and does not replace PMU-level profiling.
+- No confidence intervals or multi-seed aggregation by default.
+- Operator-level profiling is not emitted unless explicitly enabled.
+- Quantization path is calibrated on training data loader samples.
+
+
+## Benchmarking rigor
+
+- Latency is measured across repeated benchmark windows (`benchmark_repeats`) and reported with mean, standard deviation, and p95 in output artifacts.
+- Sweep comparisons should use the same dataset subset, batch size, and memory budget settings to avoid cross-run drift.
+- For publication-grade claims, run multiple seeds and aggregate externally.
+
+## Reproducibility controls
+
+`configs/default.yaml` includes deterministic controls:
+
+- `seed`: global model/training randomness control.
+- `dataloader_seed`: loader shuffle seed.
+- `num_workers`: loader worker count for stable host behavior.
+- `benchmark_repeats`: repeated latency windows for variability reporting.
+
+## Repository layout
+
+- `scripts/run_pipeline.py` — CLI entry point.
+- `configs/default.yaml` — deterministic baseline configuration.
+- `src/edge_opt/` — model, pruning, quantization, metrics, sweep, and deployment modules.
+- `docs/` — architecture and hardware-analysis notes.
 
 ## Quick start
 
@@ -70,11 +105,26 @@ export PYTHONPATH=src
 python scripts/run_pipeline.py --config configs/default.yaml
 ```
 
-## Configuration notes
+## Output artifacts
 
-Key options in `configs/default.yaml`:
-- `memory_budgets_mb`: list of SRAM budgets to report against.
-- `active_memory_budget_mb`: hard budget used to accept/reject models.
-- `cpu_frequency_scale`: low-power CPU factor (e.g., `0.7` means slower clock and higher effective latency).
+Generated in `output_dir`:
 
-Keep this project intentionally simple: adjust config first before adding new infrastructure.
+- `sweep_results.csv`
+- `pareto_frontier_latency.csv`
+- `pareto_frontier_energy.csv`
+- `summary.json`
+- `layerwise_breakdown.csv`
+- `precision_tradeoffs.csv`
+- `hardware_summary.csv`
+- `accuracy_vs_latency.png`
+- `accuracy_vs_energy.png`
+- `accuracy_vs_memory.png`
+- `layerwise_activation_memory.png`
+- `layerwise_macs.png`
+
+
+## Hardware-aware outputs
+
+- `memory_bandwidth_gbps` in config is used to estimate bandwidth utilization from measured latency.
+- Layer-wise tables capture activation and parameter footprints to highlight bottleneck layers.
+- Precision summary tables show mean behavior and acceptance ratio under memory limits.
