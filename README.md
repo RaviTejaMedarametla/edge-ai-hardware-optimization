@@ -1,32 +1,60 @@
-# Edge AI Hardware Optimization
+# Hardware-Aware Machine Learning Pipeline for Edge Deployment
+
+A reproducible research-oriented framework for training, compressing, and benchmarking compact neural networks under edge hardware constraints.
 
 ## Overview
-This repository implements a hardware-aware machine learning pipeline for evaluating compact convolutional models under memory and latency constraints on edge-class systems. The project is maintained as part of a broader AI systems engineering portfolio focused on hardware-aware machine learning, edge AI optimization, deterministic ML pipelines, and production ML systems.
+This repository implements an end-to-end machine learning workflow for studying model behavior in resource-constrained environments. The system couples deterministic training and evaluation with hardware-aware analysis to quantify trade-offs among predictive performance, latency, memory footprint, and energy proxy metrics.
+
+The project addresses a central challenge in edge AI engineering: model quality alone is insufficient when deployment targets have strict compute and memory limits. By integrating pruning, precision-aware evaluation, constraint filtering, and structured artifact export in a single configuration-driven pipeline, the repository supports repeatable experiments and transparent comparison of optimization decisions.
+
+## Project Motivation
+Modern edge deployments require models that satisfy application-level constraints (e.g., latency and memory budgets) while maintaining acceptable task performance. This repository is motivated by three research and engineering priorities:
+
+- **Edge feasibility:** evaluate compact CNN variants for scenarios where compute and memory resources are bounded.
+- **Hardware-aware optimization:** measure the impact of structured pruning and numeric precision choices on systems-oriented metrics.
+- **Deterministic experimentation:** ensure that repeated runs remain comparable through fixed seeds, controlled data loading, and explicit configuration.
 
 ## System Architecture
-The pipeline follows a deterministic, config-driven workflow:
-1. Load configuration and reproducibility controls.
-2. Train a baseline compact CNN.
-3. Apply structured channel pruning across configured sweep levels.
-4. Evaluate precision variants (FP32, FP16, INT8).
-5. Enforce memory budget constraints.
-6. Benchmark latency, throughput, memory footprint, and energy proxy.
-7. Export tabular artifacts and Pareto frontiers.
+The pipeline is organized as modular components that mirror a typical ML systems research workflow:
 
-Core components are organized under `src/edge_opt/`:
-- `model.py`: model definition and construction.
-- `experiments.py`: training/evaluation orchestration.
-- `pruning.py` and `quantization.py`: optimization passes.
-- `hardware.py` and `metrics.py`: systems-oriented measurements.
-- `deploy.py` and `reporting.py`: deployment analysis and artifact generation.
+- **Data Pipeline**  
+  Builds train/validation loaders for configured datasets and subset sizes with deterministic controls.
+
+- **Model Training**  
+  Trains a baseline compact CNN under fixed optimization settings.
+
+- **Model Compression**  
+  Applies structured channel pruning sweeps and precision variants (FP32, FP16, INT8).
+
+- **Hardware-Aware Evaluation**  
+  Computes accuracy and systems metrics, including latency, throughput, memory usage, and energy proxy; enforces memory-budget constraints; and derives Pareto frontiers.
+
+- **Inference / Deployment Analysis**  
+  Produces deployment-oriented summaries, layer-wise hardware statistics, and tabular/plot artifacts for downstream comparison.
+
+## Repository Structure
+- **`src/edge_opt/`**  
+  Core implementation of configuration loading, data handling, model definition, training/evaluation orchestration, pruning/quantization, metrics, hardware analysis, deployment simulation, and reporting.
+
+- **`scripts/`**  
+  CLI entry points for running the full hardware-aware optimization pipeline.
+
+- **`configs/`**  
+  YAML experiment configurations controlling seeds, dataset subsets, pruning levels, precision modes, and hardware budget settings.
+
+- **`docs/`**  
+  Supplemental technical notes on architecture and hardware analysis.
+
+- **`outputs/`** *(generated at runtime)*  
+  Experiment artifacts such as sweep tables, frontier CSV files, summary metadata, and analysis plots.
 
 ## Features
-- Deterministic experiment controls through YAML configuration.
-- Structured pruning sweeps with precision-aware evaluation.
-- Constraint-first filtering for memory-limited deployment scenarios.
-- Latency/throughput/memory/energy-proxy reporting.
-- Pareto frontier generation for latency-accuracy and energy-accuracy trade-offs.
-- Layer-wise hardware-analysis outputs for bottleneck inspection.
+- Deterministic, configuration-driven ML experimentation.
+- Hardware-aware benchmarking with latency, throughput, memory, and energy proxy metrics.
+- Structured pruning sweeps with precision-aware comparisons.
+- Constraint-first evaluation via configurable memory budgets.
+- Automated artifact generation for reproducible analysis.
+- CLI-based pipeline execution for consistent experiment orchestration.
 
 ## Installation
 ```bash
@@ -37,31 +65,43 @@ export PYTHONPATH=src
 ```
 
 ## Usage
-Run the default benchmark pipeline:
+Run the default experiment pipeline:
+
 ```bash
 python scripts/run_pipeline.py --config configs/default.yaml
 ```
 
-Artifacts are written to the configured `output_dir`, including sweep tables, frontier CSV files, summary metadata, and analysis plots.
+To use a custom configuration, provide a different YAML file:
+
+```bash
+python scripts/run_pipeline.py --config <path-to-config>.yaml
+```
 
 ## Reproducibility
-Reproducibility controls are configured in `configs/default.yaml`, including:
-- global seed values
-- dataloader seed settings
-- deterministic worker configuration
-- repeated benchmark windows for variability reporting
+Reproducibility is supported through explicit configuration and deterministic controls:
 
-To preserve benchmark comparability across runs, keep dataset subset sizing, batch size, memory budget, and seed settings consistent.
+- **Configuration files:** experiment settings are specified in YAML (e.g., dataset subsets, optimization sweeps, and hardware constraints).
+- **Deterministic seeds:** global and dataloader seeds are configured to reduce run-to-run variability.
+- **Experiment artifacts:** each run writes structured outputs (tables, frontiers, summaries, and plots) to enable traceable comparisons.
+
+For strict comparability across runs, keep seed values, dataset subsets, batch size, benchmark repeat counts, and memory-budget settings fixed.
 
 ## Related Projects
-This repository is part of a broader portfolio of AI systems engineering projects:
-- `neural-network-systems`
-- `digit-classification-benchmark`
-- `edge-ai-model-optimization`
-- `hospital-analytics-pipeline`
-- `nba-data-engineering`
-- `ai-systems-ml-platform`
+This repository is part of a broader portfolio focused on hardware-aware machine learning, edge AI optimization, deterministic ML pipelines, and production ML systems.
 
-## Repository Naming Note
-Professional rename suggestion (manual GitHub operation, not applied automatically):
-- `edge-ai-hardware-optimization` → `edge-ai-model-optimization`
+- `neural-network-from-scratch`
+- `classification-of-handwritten-digits1`
+- `edge-ai-hardware-optimization`
+- `data-analysis-for-hospitals`
+- `nba-data-preprocessing`
+- `Data-Science-AI-Portfolio`
+
+## Future Work
+Potential extensions include:
+
+- Deployment studies on embedded and heterogeneous edge hardware.
+- Additional compression strategies beyond current pruning/precision workflows.
+- Expanded benchmarking methodology for improved hardware realism and cross-platform comparability.
+
+## License
+This project is released under the terms of the license provided in [`LICENSE`](LICENSE).
