@@ -3,5 +3,4 @@ torchvision
 matplotlib
 pandas
 pyyaml
-onnx
-onnxruntime
+pytest

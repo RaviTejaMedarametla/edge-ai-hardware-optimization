@@ -57,32 +57,44 @@ def run_sweep(
     active_memory_budget_mb: float,
     latency_multiplier: float,
     benchmark_repeats: int = 5,
+    benchmark_trials: int = 3,
 ) -> pd.DataFrame:
     rows: list[dict] = []
 
     for pruning in pruning_levels:
         candidate = structured_channel_prune(base_model, pruning)
         for precision in precisions:
-            variant, metric_precision = precision_variant(candidate, precision, calibration_loader, calibration_batches)
-            metrics: PerfMetrics = collect_metrics(
-                variant,
-                val_loader,
-                device,
-                power_watts=power_watts,
-                precision=metric_precision,
-                latency_multiplier=latency_multiplier,
-                benchmark_repeats=benchmark_repeats,
-            )
-            violations = memory_violations(metrics.memory_mb, memory_budgets_mb)
-            rejected = metrics.memory_mb > active_memory_budget_mb
-            row = {
-                "pruning_level": pruning,
-                "precision": precision,
-                "accepted": not rejected,
-                "active_budget_mb": active_memory_budget_mb,
-                **asdict(metrics),
-                **violations,
-            }
+            try:
+                variant, metric_precision = precision_variant(candidate, precision, calibration_loader, calibration_batches)
+                metrics: PerfMetrics = collect_metrics(
+                    variant,
+                    val_loader,
+                    device,
+                    power_watts=power_watts,
+                    precision=metric_precision,
+                    latency_multiplier=latency_multiplier,
+                    benchmark_repeats=benchmark_repeats,
+                    benchmark_trials=benchmark_trials,
+                )
+                violations = memory_violations(metrics.memory_mb, memory_budgets_mb)
+                rejected = metrics.memory_mb > active_memory_budget_mb
+                row = {
+                    "pruning_level": pruning,
+                    "precision": precision,
+                    "accepted": not rejected,
+                    "error": None,
+                    "active_budget_mb": active_memory_budget_mb,
+                    **asdict(metrics),
+                    **violations,
+                }
+            except Exception as exc:  # defensive to preserve sweep continuity
+                row = {
+                    "pruning_level": pruning,
+                    "precision": precision,
+                    "accepted": False,
+                    "error": str(exc),
+                    "active_budget_mb": active_memory_budget_mb,
+                }
             rows.append(row)
 
     return pd.DataFrame(rows)

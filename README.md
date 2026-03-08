@@ -1,5 +1,7 @@
 # Hardware-Aware Machine Learning Pipeline for Edge Deployment
 
+![CI](https://github.com/RaviTejaMedarametla/edge-ai-hardware-optimization/actions/workflows/ci.yml/badge.svg)
+
 A reproducible research-oriented framework for training, compressing, and benchmarking compact neural networks under edge hardware constraints.
 
 ## Overview
@@ -77,6 +79,32 @@ To use a custom configuration, provide a different YAML file:
 python scripts/run_pipeline.py --config <path-to-config>.yaml
 ```
 
+## Quick Start
+Run a complete default experiment and inspect generated artifacts:
+
+```bash
+python scripts/run_pipeline.py --config configs/default.yaml
+```
+
+Expected outcomes after a successful run:
+- Console prints `summary.json`-style metrics (accuracy, latency, memory, energy proxy, and acceptance stats).
+- `outputs/` contains analysis artifacts such as:
+  - `sweep_results.csv`
+  - `pareto_frontier_latency.csv`
+  - `pareto_frontier_energy.csv`
+  - `accuracy_vs_latency.png`, `accuracy_vs_energy.png`, `accuracy_vs_memory.png`
+
+Example summary snippet (illustrative):
+
+```json
+{
+  "study_rows": 12,
+  "accepted_rows": 9,
+  "best_accuracy_accepted": 0.88,
+  "lowest_latency_ms_accepted": 3.42
+}
+```
+
 ## Reproducibility
 Reproducibility is supported through explicit configuration and deterministic controls:
 
@@ -95,6 +123,11 @@ This repository is part of a broader portfolio focused on hardware-aware machine
 - `data-analysis-for-hospitals`
 - `nba-data-preprocessing`
 - `Data-Science-AI-Portfolio`
+
+## Development Notes
+This repository was recently refactored to improve clarity, reliability, and reproducibility (configuration validation, architecture generalization, stronger testing, and CI automation).
+
+The refactor was implementation-focused: core experiment intent and pipeline semantics remain the same, but the codebase now provides clearer invariants, better failure handling, and more transparent benchmarking outputs.
 
 ## Future Work
 Potential extensions include:

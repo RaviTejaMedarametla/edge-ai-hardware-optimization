@@ -15,6 +15,15 @@ This repository provides first-order hardware-aware estimates for memory pressur
 
 These values are shape-derived estimates from the baseline batch configuration and are intended for relative comparison.
 
+### Dtype-aware byte accounting
+
+The hardware estimator is now dtype-aware:
+
+- **Parameter bytes** are inferred from the model tensor dtype via `tensor.element_size()`.
+- **Activation bytes** can be configured through `activation_bytes_per_value` (or default to the same byte width as parameters).
+
+This is more realistic than assuming a fixed byte width and better reflects FP32/FP16 deployment studies.
+
 ## Bandwidth and utilization estimate
 
 `hardware_summary.csv` derives:
@@ -36,12 +45,21 @@ These values are shape-derived estimates from the baseline batch configuration a
 - mean energy proxy
 - acceptance ratio under active memory budget
 
+## Energy proxy interpretation
+
+Energy is reported as a **proxy**, not direct hardware power telemetry:
+
+- `energy_proxy_j = power_watts × latency_seconds`
+- `power_watts` is a static configuration parameter
+- this value should be interpreted as a comparative indicator across variants, not measured joules from on-device instrumentation
+
 ## Failure modes and caveats
 
 - Estimates do not include cache-miss penalties or kernel launch overhead details.
 - INT8 execution path may vary by backend implementation and calibration data quality.
 - CPU host contention can significantly affect measured latency and derived utilization.
 - Activation memory reported is per-layer output footprint and not full runtime peak memory.
+- Energy proxy is not a substitute for measured board-level power traces.
 
 ## Edge and constrained scenarios
 

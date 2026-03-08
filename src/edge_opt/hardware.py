@@ -5,7 +5,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import torch
 from torch import nn
 
 
@@ -24,23 +23,30 @@ def _conv2d_output_shape(height: int, width: int, kernel: int, padding: int, str
     return out_h, out_w
 
 
-def estimate_layerwise_stats(model: nn.Module, batch_size: int, input_shape: tuple[int, int, int] = (1, 28, 28)) -> pd.DataFrame:
-    channels, height, width = input_shape
-    bytes_per_value = 4
+def estimate_layerwise_stats(
+    model: nn.Module,
+    batch_size: int,
+    input_shape: tuple[int, int, int] = (1, 28, 28),
+    activation_bytes_per_value: int | None = None,
+) -> pd.DataFrame:
+    _, height, width = input_shape
 
     conv1 = model.conv1
+    conv2 = model.conv2
+    linear = model.classifier
+
+    parameter_bytes_per_value = conv1.weight.element_size()
+    activation_bytes_per_value = activation_bytes_per_value or parameter_bytes_per_value
+
     h1, w1 = _conv2d_output_shape(height, width, kernel=3, padding=1)
     h1_pool, w1_pool = h1 // 2, w1 // 2
     conv1_elements = batch_size * conv1.out_channels * h1 * w1
     conv1_macs = batch_size * conv1.out_channels * h1 * w1 * conv1.in_channels * 3 * 3
 
-    conv2 = model.conv2
     h2, w2 = _conv2d_output_shape(h1_pool, w1_pool, kernel=3, padding=1)
-    h2_pool, w2_pool = h2 // 2, w2 // 2
     conv2_elements = batch_size * conv2.out_channels * h2 * w2
     conv2_macs = batch_size * conv2.out_channels * h2 * w2 * conv2.in_channels * 3 * 3
 
-    linear = model.classifier
     linear_elements = batch_size * linear.out_features
     linear_macs = batch_size * linear.in_features * linear.out_features
 
@@ -48,22 +54,22 @@ def estimate_layerwise_stats(model: nn.Module, batch_size: int, input_shape: tup
         LayerEstimate(
             layer="conv1",
             output_elements=conv1_elements,
-            parameter_bytes=(conv1.weight.numel() + conv1.bias.numel()) * bytes_per_value,
-            activation_bytes=conv1_elements * bytes_per_value,
+            parameter_bytes=(conv1.weight.numel() + conv1.bias.numel()) * parameter_bytes_per_value,
+            activation_bytes=conv1_elements * activation_bytes_per_value,
             macs=conv1_macs,
         ),
         LayerEstimate(
             layer="conv2",
             output_elements=conv2_elements,
-            parameter_bytes=(conv2.weight.numel() + conv2.bias.numel()) * bytes_per_value,
-            activation_bytes=conv2_elements * bytes_per_value,
+            parameter_bytes=(conv2.weight.numel() + conv2.bias.numel()) * parameter_bytes_per_value,
+            activation_bytes=conv2_elements * activation_bytes_per_value,
             macs=conv2_macs,
         ),
         LayerEstimate(
             layer="classifier",
             output_elements=linear_elements,
-            parameter_bytes=(linear.weight.numel() + linear.bias.numel()) * bytes_per_value,
-            activation_bytes=linear_elements * bytes_per_value,
+            parameter_bytes=(linear.weight.numel() + linear.bias.numel()) * parameter_bytes_per_value,
+            activation_bytes=linear_elements * activation_bytes_per_value,
             macs=linear_macs,
         ),
     ]
