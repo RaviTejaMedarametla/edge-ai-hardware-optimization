@@ -56,6 +56,7 @@ def main() -> None:
         precision="fp32",
         latency_multiplier=latency_multiplier,
         benchmark_repeats=cfg.benchmark_repeats,
+        benchmark_trials=cfg.benchmark_trials,
     )
     baseline_violations = memory_violations(baseline_metrics.memory_mb, cfg.memory_budgets_mb)
 
@@ -72,6 +73,7 @@ def main() -> None:
         active_memory_budget_mb=cfg.active_memory_budget_mb,
         latency_multiplier=latency_multiplier,
         benchmark_repeats=cfg.benchmark_repeats,
+        benchmark_trials=cfg.benchmark_trials,
     )
 
     latency_frontier = pareto_frontier(sweep_df, x_col="latency_ms")

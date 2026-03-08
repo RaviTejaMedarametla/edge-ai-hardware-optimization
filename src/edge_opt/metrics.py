@@ -11,12 +11,16 @@ from torch.utils.data import DataLoader
 @dataclass
 class PerfMetrics:
     accuracy: float
+    accuracy_std: float
+    accuracy_ci95_low: float
+    accuracy_ci95_high: float
     latency_ms: float
     latency_std_ms: float
     latency_p95_ms: float
     throughput_sps: float
     memory_mb: float
     energy_proxy_j: float
+    energy_proxy_note: str
 
 
 def evaluate_accuracy(model: nn.Module, loader: DataLoader, device: torch.device, precision: str = "fp32") -> float:
@@ -36,6 +40,21 @@ def evaluate_accuracy(model: nn.Module, loader: DataLoader, device: torch.device
     return correct / total
 
 
+def evaluate_accuracy_distribution(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    precision: str,
+    trials: int,
+) -> tuple[float, float, float, float]:
+    accuracies = [evaluate_accuracy(model, loader, device, precision=precision) for _ in range(trials)]
+    tensor = torch.tensor(accuracies, dtype=torch.float32)
+    mean = float(tensor.mean())
+    std = float(tensor.std(unbiased=False))
+    ci_half_width = float(1.96 * (std / max(trials**0.5, 1.0)))
+    return mean, std, max(0.0, mean - ci_half_width), min(1.0, mean + ci_half_width)
+
+
 def measure_latency(model: nn.Module, sample_input: torch.Tensor, num_runs: int = 100, warmup: int = 10) -> float:
     model.eval()
     with torch.no_grad():
@@ -48,12 +67,11 @@ def measure_latency(model: nn.Module, sample_input: torch.Tensor, num_runs: int 
     return (elapsed / num_runs) * 1000.0
 
 
-
-
 def measure_latency_distribution(model: nn.Module, sample_input: torch.Tensor, repeats: int = 5, num_runs: int = 100, warmup: int = 10) -> tuple[float, float, float]:
     latencies = [measure_latency(model, sample_input, num_runs=num_runs, warmup=warmup) for _ in range(repeats)]
     latency_tensor = torch.tensor(latencies, dtype=torch.float32)
     return float(latency_tensor.mean()), float(latency_tensor.std(unbiased=False)), float(torch.quantile(latency_tensor, 0.95))
+
 
 def model_memory_mb(model: nn.Module) -> float:
     total_bytes = 0
@@ -75,13 +93,20 @@ def collect_metrics(
     precision: str,
     latency_multiplier: float = 1.0,
     benchmark_repeats: int = 5,
+    benchmark_trials: int = 3,
 ) -> PerfMetrics:
     sample_batch, _ = next(iter(loader))
     sample_input = sample_batch.to(device)
     if precision == "fp16":
         sample_input = sample_input.half()
 
-    accuracy = evaluate_accuracy(model, loader, device, precision=precision)
+    accuracy, accuracy_std, ci_low, ci_high = evaluate_accuracy_distribution(
+        model,
+        loader,
+        device,
+        precision=precision,
+        trials=benchmark_trials,
+    )
     latency_mean, latency_std, latency_p95 = measure_latency_distribution(model, sample_input, repeats=benchmark_repeats)
     latency = latency_mean * latency_multiplier
     throughput = sample_input.shape[0] / (latency / 1000.0)
@@ -90,10 +115,14 @@ def collect_metrics(
 
     return PerfMetrics(
         accuracy=accuracy,
+        accuracy_std=accuracy_std,
+        accuracy_ci95_low=ci_low,
+        accuracy_ci95_high=ci_high,
         latency_ms=latency,
         latency_std_ms=latency_std * latency_multiplier,
         latency_p95_ms=latency_p95 * latency_multiplier,
         throughput_sps=throughput,
         memory_mb=memory,
         energy_proxy_j=energy_proxy,
+        energy_proxy_note="Proxy metric computed as power_watts × latency_s (not measured on-device power)",
     )

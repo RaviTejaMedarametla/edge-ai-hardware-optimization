@@ -22,7 +22,7 @@ def structured_channel_prune(model: SmallCNN, pruning_level: float) -> SmallCNN:
     conv2_scores = model.conv2.weight.data.abs().sum(dim=(1, 2, 3))
     keep2 = _topk_indices(conv2_scores, pruning_level)
 
-    pruned = SmallCNN(conv1_channels=len(keep1), conv2_channels=len(keep2))
+    pruned = SmallCNN(conv1_channels=len(keep1), conv2_channels=len(keep2), num_classes=model.classifier.out_features)
 
     with torch.no_grad():
         pruned.conv1.weight.copy_(model.conv1.weight[keep1])
@@ -32,14 +32,7 @@ def structured_channel_prune(model: SmallCNN, pruning_level: float) -> SmallCNN:
         pruned.conv2.weight.copy_(conv2_w)
         pruned.conv2.bias.copy_(model.conv2.bias[keep2])
 
-        features_per_channel = 7 * 7
-        fc_indices = []
-        for channel in keep2.tolist():
-            start = channel * features_per_channel
-            fc_indices.extend(range(start, start + features_per_channel))
-        fc_idx = torch.tensor(fc_indices, dtype=torch.long)
-
-        pruned.classifier.weight.copy_(model.classifier.weight[:, fc_idx])
+        pruned.classifier.weight.copy_(model.classifier.weight[:, keep2])
         pruned.classifier.bias.copy_(model.classifier.bias)
 
     return pruned
