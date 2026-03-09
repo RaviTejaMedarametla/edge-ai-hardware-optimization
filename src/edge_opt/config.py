@@ -29,6 +29,11 @@ class ExperimentConfig:
     benchmark_repeats: int
     memory_bandwidth_gbps: float
     benchmark_trials: int
+    device: str = "cpu"
+    benchmark_warmup: int = 3
+    quantization_backend: str = "fbgemm"
+    fine_tune_epochs: int = 0
+    pareto_use_ci: bool = False
 
     def __post_init__(self) -> None:
         if self.batch_size <= 0 or self.epochs <= 0 or self.learning_rate <= 0:
@@ -42,6 +47,16 @@ class ExperimentConfig:
         allowed_precisions = {"fp32", "fp16", "int8"}
         if not self.precisions or any(p not in allowed_precisions for p in self.precisions):
             raise ValueError("precisions must be non-empty and within {'fp32','fp16','int8'}")
+        if self.device not in {"cpu", "cuda", "mps"}:
+            raise ValueError("device must be one of {'cpu', 'cuda', 'mps'}")
+        if self.benchmark_warmup < 0:
+            raise ValueError("benchmark_warmup must be >= 0")
+        if self.benchmark_trials <= 0:
+            raise ValueError("benchmark_trials must be > 0")
+        if self.calibration_batches <= 0:
+            raise ValueError("calibration_batches must be > 0")
+        if self.fine_tune_epochs < 0:
+            raise ValueError("fine_tune_epochs must be >= 0")
 
 
 def _require(raw: dict[str, Any], key: str) -> Any:
@@ -75,4 +90,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
         benchmark_repeats=int(raw.get("benchmark_repeats", 5)),
         memory_bandwidth_gbps=float(raw.get("memory_bandwidth_gbps", 12.8)),
         benchmark_trials=int(raw.get("benchmark_trials", 3)),
+        device=str(raw.get("device", "cpu")),
+        benchmark_warmup=int(raw.get("benchmark_warmup", 3)),
+        quantization_backend=str(raw.get("quantization_backend", "fbgemm")),
+        fine_tune_epochs=int(raw.get("fine_tune_epochs", 0)),
+        pareto_use_ci=bool(raw.get("pareto_use_ci", False)),
     )

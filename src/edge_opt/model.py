@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import warnings
 
 import numpy as np
 import torch
@@ -23,6 +24,25 @@ class SmallCNN(nn.Module):
         x = self.global_pool(x)
         x = x.flatten(start_dim=1)
         return self.classifier(x)
+
+
+def resolve_device(device_name: str) -> torch.device:
+    """Resolve requested device with graceful fallback and warning."""
+    if device_name == "cpu":
+        return torch.device("cpu")
+    if device_name == "cuda":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        warnings.warn("CUDA requested but unavailable; falling back to CPU.", stacklevel=2)
+        return torch.device("cpu")
+    if device_name == "mps":
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+        warnings.warn("MPS requested but unavailable; falling back to CPU.", stacklevel=2)
+        return torch.device("cpu")
+
+    warnings.warn(f"Unknown device '{device_name}'; falling back to CPU.", stacklevel=2)
+    return torch.device("cpu")
 
 
 def set_deterministic(seed: int) -> None:

@@ -87,3 +87,10 @@ This document captures concrete repository changes to improve scientific credibi
 - Added validation and repeated trials introduce modest runtime overhead.
 - Adaptive pooling changes model inductive bias and may slightly alter baseline accuracy trends.
 - Sweep-level exception capture requires downstream analysis to consider `error` rows explicitly.
+
+## Latest Overhaul Additions
+- Config-driven device selection and benchmarking warmup controls.
+- Empty-loader validation in metrics and deployment simulation.
+- Multi-seed orchestration script and regression guard tests.
+- Commitlint workflow for conventional commit enforcement.
+

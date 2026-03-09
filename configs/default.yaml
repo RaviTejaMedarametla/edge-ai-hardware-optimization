@@ -3,7 +3,12 @@ dataloader_seed: 7
 num_workers: 2
 benchmark_repeats: 5
 benchmark_trials: 3
+benchmark_warmup: 3
 memory_bandwidth_gbps: 12.8
+device: cpu
+quantization_backend: fbgemm
+fine_tune_epochs: 0
+pareto_use_ci: false
 dataset: fashion-mnist
 batch_size: 128
 epochs: 2

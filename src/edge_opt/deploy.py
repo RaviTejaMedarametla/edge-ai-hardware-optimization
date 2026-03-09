@@ -7,9 +7,19 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 
-def deployment_simulation(model: nn.Module, loader: DataLoader, cpu_frequency_scale: float, stream_items: int = 128) -> dict[str, float]:
+def deployment_simulation(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    cpu_frequency_scale: float,
+    stream_items: int = 128,
+) -> dict[str, float]:
+    if len(loader) == 0:
+        raise ValueError("No batches in loader; check dataset or split.")
+
     model.eval()
     batch_inputs, _ = next(iter(loader))
+    batch_inputs = batch_inputs.to(device)
     latency_multiplier = 1.0 / max(cpu_frequency_scale, 1e-6)
 
     with torch.no_grad():

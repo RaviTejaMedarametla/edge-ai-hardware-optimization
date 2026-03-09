@@ -52,11 +52,15 @@ The pipeline is organized as modular components that mirror a typical ML systems
 
 ## Features
 - Deterministic, configuration-driven ML experimentation.
-- Hardware-aware benchmarking with latency, throughput, memory, and energy proxy metrics.
+- Hardware-aware benchmarking with mean/median/p95 latency, throughput, parameter memory, runtime memory estimate, and energy proxy metrics.
 - Structured pruning sweeps with precision-aware comparisons.
 - Constraint-first evaluation via configurable memory budgets.
 - Automated artifact generation for reproducible analysis.
 - CLI-based pipeline execution for consistent experiment orchestration.
+- Device-aware execution (`cpu`/`cuda`/`mps`) with safe fallback warnings.
+- Optional post-pruning fine-tuning and configurable quantization backends.
+- Reproducibility metadata export (`reproducibility.json`) and multi-seed orchestration script.
+
 
 ## Installation
 ```bash
@@ -77,6 +81,12 @@ To use a custom configuration, provide a different YAML file:
 
 ```bash
 python scripts/run_pipeline.py --config <path-to-config>.yaml
+
+Run multi-seed orchestration:
+
+```bash
+python experiments/multi_seed.py --config-template configs/default.yaml --seeds 1 2 3
+```
 ```
 
 ## Quick Start

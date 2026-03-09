@@ -26,6 +26,20 @@ def test_collect_metrics_reports_ci_and_energy_note() -> None:
     )
     assert metrics.accuracy_ci95_low <= metrics.accuracy <= metrics.accuracy_ci95_high
     assert "not measured" in metrics.energy_proxy_note
+    assert metrics.estimated_runtime_memory_mb > metrics.model_memory_mb
+
+
+def test_collect_metrics_rejects_empty_loader() -> None:
+    x = torch.randn(0, 1, 28, 28)
+    y = torch.randint(0, 10, (0,))
+    loader = DataLoader(TensorDataset(x, y), batch_size=4)
+    with torch.no_grad():
+        model = SmallCNN()
+        try:
+            collect_metrics(model, loader, torch.device("cpu"), 2.0, "fp32")
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "No batches" in str(exc)
 
 
 def test_estimate_layerwise_stats_uses_dtype_sizes() -> None:
