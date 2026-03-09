@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import warnings
 from copy import deepcopy
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -9,22 +12,59 @@ from torch.ao.quantization.quantize_fx import convert_fx, prepare_fx
 from torch.utils.data import DataLoader
 
 
+def _default_backend() -> str:
+    return "qnnpack" if "arm" in torch.backends.quantized.engine.lower() else "fbgemm"
+
+
 def to_fp16(model: nn.Module) -> nn.Module:
     fp16_model = deepcopy(model).half().eval()
     return fp16_model
 
 
-def to_int8(model: nn.Module, calibration_loader: DataLoader, calibration_batches: int = 10) -> nn.Module:
-    float_model = deepcopy(model).eval()
-    qconfig_mapping = get_default_qconfig_mapping("fbgemm")
-    example_inputs, _ = next(iter(calibration_loader))
-    prepared = prepare_fx(float_model, qconfig_mapping, example_inputs=(example_inputs,))
+def to_int8(
+    model: nn.Module,
+    calibration_loader: DataLoader,
+    calibration_batches: int = 10,
+    backend: str | None = None,
+    metadata_path: str | Path | None = None,
+) -> nn.Module:
+    backend_name = backend or _default_backend()
+    float_model = deepcopy(model).eval().to("cpu")
 
-    with torch.no_grad():
-        for index, (inputs, _) in enumerate(calibration_loader):
-            _ = prepared(inputs)
-            if index + 1 >= calibration_batches:
+    try:
+        qconfig_mapping = get_default_qconfig_mapping(backend_name)
+        example_inputs, _ = next(iter(calibration_loader))
+        prepared = prepare_fx(float_model, qconfig_mapping, example_inputs=(example_inputs.cpu(),))
+
+        with torch.no_grad():
+            for index, (inputs, _) in enumerate(calibration_loader):
+                _ = prepared(inputs.cpu())
+                if index + 1 >= calibration_batches:
+                    break
+
+        quantized = convert_fx(prepared)
+    except Exception as exc:
+        warnings.warn(f"INT8 quantization backend '{backend_name}' failed ({exc}); using CPU float model.", stacklevel=2)
+        quantized = float_model
+
+    if metadata_path is not None:
+        metadata = {
+            "backend": backend_name,
+            "calibration_batches": calibration_batches,
+            "quantized": quantized is not float_model,
+            "scale": None,
+            "zero_point": None,
+        }
+        for _, module in quantized.named_modules():
+            scale = getattr(module, "scale", None)
+            zero_point = getattr(module, "zero_point", None)
+            if scale is not None and zero_point is not None:
+                metadata["scale"] = float(scale)
+                metadata["zero_point"] = int(zero_point)
                 break
 
-    quantized = convert_fx(prepared)
+        path = Path(metadata_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
     return quantized

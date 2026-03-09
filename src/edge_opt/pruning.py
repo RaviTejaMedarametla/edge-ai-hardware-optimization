@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
+from torch.utils.data import DataLoader
 
 from edge_opt.model import SmallCNN
 
@@ -35,4 +38,17 @@ def structured_channel_prune(model: SmallCNN, pruning_level: float) -> SmallCNN:
         pruned.classifier.weight.copy_(model.classifier.weight[:, keep2])
         pruned.classifier.bias.copy_(model.classifier.bias)
 
+    return pruned
+
+
+def prune_and_finetune(
+    model: SmallCNN,
+    pruning_level: float,
+    fine_tune_epochs: int,
+    train_loader: DataLoader,
+    train_one_epoch: Callable[[SmallCNN, DataLoader], SmallCNN],
+) -> SmallCNN:
+    pruned = structured_channel_prune(model, pruning_level)
+    for _ in range(fine_tune_epochs):
+        pruned = train_one_epoch(pruned, train_loader)
     return pruned
