@@ -132,7 +132,6 @@ This repository is part of a broader portfolio focused on hardware-aware machine
 - `edge-ai-hardware-optimization`
 - `data-analysis-for-hospitals`
 - `nba-data-preprocessing`
-- `Data-Science-AI-Portfolio`
 
 ## Development Notes
 This repository was recently refactored to improve clarity, reliability, and reproducibility (configuration validation, architecture generalization, stronger testing, and CI automation).
