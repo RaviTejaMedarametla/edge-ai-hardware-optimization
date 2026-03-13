@@ -109,6 +109,7 @@ def main() -> None:
         layerwise_df,
         latency_ms=baseline_metrics.latency_ms,
         memory_bandwidth_gbps=cfg.memory_bandwidth_gbps,
+        peak_compute_gmacs=cfg.peak_compute_gmacs,
     )
     precision_df = precision_tradeoff_table(sweep_df)
     save_hardware_artifacts(output_dir, layerwise_df, precision_df, hardware_summary)

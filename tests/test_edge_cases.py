@@ -24,20 +24,19 @@ def test_invalid_device_string_warns_and_falls_back() -> None:
     assert str(device) == "cpu"
 
 
-def test_quantization_backend_failure_falls_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_fake_quantization_writes_layer_metadata(tmp_path: Path) -> None:
     x = torch.randn(8, 1, 28, 28)
     y = torch.randint(0, 10, (8,))
     loader = DataLoader(TensorDataset(x, y), batch_size=4)
 
-    def _raise(*args, **kwargs):
-        raise RuntimeError("backend boom")
-
-    monkeypatch.setattr("edge_opt.quantization.get_default_qconfig_mapping", _raise)
-
-    with pytest.warns(UserWarning):
-        quantized = to_int8(SmallCNN(), loader, calibration_batches=1, backend="fbgemm", metadata_path=tmp_path / "q.json")
+    quantized = to_int8(SmallCNN(), loader, calibration_batches=1, backend="fbgemm", metadata_path=tmp_path / "q.json")
     assert isinstance(quantized, SmallCNN)
-    assert (tmp_path / "q.json").exists()
+
+    metadata_path = tmp_path / "q.json"
+    assert metadata_path.exists()
+    payload = metadata_path.read_text(encoding="utf-8")
+    assert "layers" in payload
+
 
 
 def test_invalid_config_values_raise() -> None:
