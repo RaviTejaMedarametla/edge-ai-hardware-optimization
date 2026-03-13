@@ -81,12 +81,12 @@ To use a custom configuration, provide a different YAML file:
 
 ```bash
 python scripts/run_pipeline.py --config <path-to-config>.yaml
+```
 
 Run multi-seed orchestration:
 
 ```bash
 python experiments/multi_seed.py --config-template configs/default.yaml --seeds 1 2 3
-```
 ```
 
 ## Quick Start
@@ -97,6 +97,7 @@ python scripts/run_pipeline.py --config configs/default.yaml
 ```
 
 Expected outcomes after a successful run:
+- Optional roofline-style regime tagging (`memory-bound` vs `compute-bound`) is produced when `peak_compute_gmacs` is configured.
 - Console prints `summary.json`-style metrics (accuracy, latency, memory, energy proxy, and acceptance stats).
 - `outputs/` contains analysis artifacts such as:
   - `sweep_results.csv`

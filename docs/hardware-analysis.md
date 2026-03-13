@@ -2,11 +2,11 @@
 
 ## Objective
 
-This repository provides first-order hardware-aware estimates for memory pressure, compute density, and precision trade-offs without changing the baseline model API.
+This repository provides first-order hardware-aware estimates for memory pressure, compute density, precision trade-offs, and roofline-style bottleneck diagnosis without changing the baseline model API.
 
 ## Layer-wise breakdown
 
-`layerwise_breakdown.csv` reports for `conv1`, `conv2`, and `classifier`:
+`layerwise_breakdown.csv` reports per-layer statistics for supported trainable modules (`Conv2d`, `Linear`):
 
 - output activation elements
 - parameter bytes
@@ -15,11 +15,15 @@ This repository provides first-order hardware-aware estimates for memory pressur
 
 These values are shape-derived estimates from the baseline batch configuration and are intended for relative comparison.
 
+### Generic profiling support
+
+Layer-wise profiling no longer assumes a fixed model topology. Instead, forward hooks are attached dynamically to each supported module. This allows profiling of scratch-built CNNs/MLPs that differ from the default `SmallCNN` architecture while preserving deterministic output tables.
+
 ### Dtype-aware byte accounting
 
-The hardware estimator is now dtype-aware:
+The hardware estimator is dtype-aware:
 
-- **Parameter bytes** are inferred from the model tensor dtype via `tensor.element_size()`.
+- **Parameter bytes** are inferred from each module's tensor dtype via `tensor.element_size()`.
 - **Activation bytes** can be configured through `activation_bytes_per_value` (or default to the same byte width as parameters).
 
 This is more realistic than assuming a fixed byte width and better reflects FP32/FP16 deployment studies.
@@ -34,6 +38,17 @@ This is more realistic than assuming a fixed byte width and better reflects FP32
 - configured memory bandwidth (`memory_bandwidth_gbps`)
 - bandwidth utilization ratio
 - achieved GMAC/s estimate
+- arithmetic intensity (`MACs / byte`)
+
+## Roofline-oriented bound tagging
+
+When `peak_compute_gmacs` is configured in the experiment YAML, hardware summary adds:
+
+- configured peak compute throughput
+- roofline knee (`peak_compute_gmacs / memory_bandwidth_gbps`)
+- inferred bottleneck regime: `memory-bound` or `compute-bound`
+
+This provides a practical, research-friendly interpretation of whether optimization should prioritize reduced memory traffic (e.g., pruning/layout) or improved arithmetic throughput (e.g., lower precision/hardware kernels).
 
 ## Precision and quantization trade-off table
 
@@ -60,6 +75,7 @@ Energy is reported as a **proxy**, not direct hardware power telemetry:
 - CPU host contention can significantly affect measured latency and derived utilization.
 - Activation memory reported is per-layer output footprint and not full runtime peak memory.
 - Energy proxy is not a substitute for measured board-level power traces.
+- Roofline labeling is first-order and depends on accurate `peak_compute_gmacs` and memory-bandwidth configuration.
 
 ## Edge and constrained scenarios
 

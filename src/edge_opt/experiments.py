@@ -56,7 +56,7 @@ def precision_variant(
             calibration_batches=calibration_batches,
             backend=quantization_backend,
             metadata_path=quant_metadata_path,
-        ), "fp32"
+        ), "int8"
     msg = f"Unsupported precision '{precision}'"
     raise ValueError(msg)
 
@@ -83,27 +83,30 @@ def run_sweep(
     output_dir: Path | None = None,
 ) -> pd.DataFrame:
     rows: list[dict] = []
+    error_rows: list[dict] = []
 
     for pruning in pruning_levels:
         if fine_tune_epochs > 0:
-            optimizer = torch.optim.Adam(base_model.parameters(), lr=learning_rate)
-            criterion = nn.CrossEntropyLoss()
 
             def _epoch(model: nn.Module, loader: DataLoader) -> nn.Module:
+                optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+                criterion = nn.CrossEntropyLoss()
                 return train_one_epoch(model, loader, optimizer, criterion, device)
 
-            candidate = prune_and_finetune(base_model, pruning, fine_tune_epochs, train_loader, _epoch)
+            pruned_base = prune_and_finetune(base_model, pruning, fine_tune_epochs, train_loader, _epoch)
         else:
-            candidate = structured_channel_prune(base_model, pruning)
-        candidate = candidate.to(device)
+            pruned_base = structured_channel_prune(base_model, pruning)
+
+        pruned_base = pruned_base.to(device)
 
         for precision in precisions:
             try:
                 metadata_path = None
                 if output_dir is not None and precision == "int8":
-                    metadata_path = output_dir / f"quantization_metadata_p{pruning}.json"
+                    metadata_path = output_dir / f"quantization_metadata_p{pruning}_{precision}.json"
+
                 variant, metric_precision = precision_variant(
-                    candidate,
+                    pruned_base,
                     precision,
                     calibration_loader,
                     calibration_batches,
@@ -111,6 +114,7 @@ def run_sweep(
                     metadata_path,
                 )
                 variant = variant.to(device)
+
                 metrics: PerfMetrics = collect_metrics(
                     variant,
                     val_loader,
@@ -133,15 +137,21 @@ def run_sweep(
                     **asdict(metrics),
                     **violations,
                 }
+                rows.append(row)
             except Exception as exc:  # defensive to preserve sweep continuity
-                row = {
-                    "pruning_level": pruning,
-                    "precision": precision,
-                    "accepted": False,
-                    "error": str(exc),
-                    "active_budget_mb": active_memory_budget_mb,
-                }
-            rows.append(row)
+                error_rows.append(
+                    {
+                        "pruning_level": pruning,
+                        "precision": precision,
+                        "accepted": False,
+                        "error": str(exc),
+                        "active_budget_mb": active_memory_budget_mb,
+                    }
+                )
+
+    if output_dir is not None and error_rows:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(error_rows).to_csv(output_dir / "sweep_errors.csv", index=False)
 
     return pd.DataFrame(rows)
 

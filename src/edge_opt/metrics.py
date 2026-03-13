@@ -8,6 +8,8 @@ from torch import nn
 from torch.utils import benchmark
 from torch.utils.data import DataLoader
 
+from edge_opt.hardware import peak_activation_memory
+
 
 @dataclass
 class PerfMetrics:
@@ -158,7 +160,10 @@ def collect_metrics(
     latency = latency_mean * latency_multiplier
     throughput = sample_input.shape[0] / (latency / 1000.0)
     param_memory = model_memory_mb(model)
-    runtime_memory = estimated_runtime_memory_mb(param_memory)
+    runtime_memory = max(
+        estimated_runtime_memory_mb(param_memory),
+        peak_activation_memory(model, batch_size=sample_input.shape[0], input_shape=tuple(sample_input.shape[1:])),
+    )
     energy_proxy = (latency / 1000.0) * power_watts
 
     return PerfMetrics(

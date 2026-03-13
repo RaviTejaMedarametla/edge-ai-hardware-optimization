@@ -64,3 +64,30 @@ def test_config_rejects_zero_trials() -> None:
             memory_bandwidth_gbps=10.0,
             benchmark_trials=0,
         )
+
+
+def test_config_rejects_non_positive_peak_compute() -> None:
+    with pytest.raises(ValueError):
+        ExperimentConfig(
+            seed=1,
+            dataset="fashion-mnist",
+            batch_size=32,
+            epochs=1,
+            learning_rate=0.001,
+            train_subset=None,
+            val_subset=None,
+            power_watts=2.0,
+            pruning_levels=[0.0],
+            precisions=["fp32"],
+            calibration_batches=1,
+            output_dir="outputs",
+            memory_budgets_mb=[1.0],
+            active_memory_budget_mb=1.0,
+            cpu_frequency_scale=1.0,
+            dataloader_seed=1,
+            num_workers=0,
+            benchmark_repeats=1,
+            memory_bandwidth_gbps=10.0,
+            benchmark_trials=1,
+            peak_compute_gmacs=0.0,
+        )
