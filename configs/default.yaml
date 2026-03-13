@@ -23,3 +23,5 @@ memory_budgets_mb: [1.0, 2.0, 4.0]
 active_memory_budget_mb: 2.0
 cpu_frequency_scale: 0.7
 output_dir: outputs
+peak_compute_gmacs: 64.0
+model: SmallCNN

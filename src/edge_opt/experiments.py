@@ -37,30 +37,6 @@ def train_model(model: nn.Module, train_loader: DataLoader, epochs: int, learnin
     return model
 
 
-def precision_variant(
-    model: nn.Module,
-    precision: str,
-    calibration_loader: DataLoader,
-    calibration_batches: int,
-    quantization_backend: str,
-    quant_metadata_path: Path | None,
-) -> tuple[nn.Module, str]:
-    if precision == "fp32":
-        return deepcopy(model).eval(), "fp32"
-    if precision == "fp16":
-        return to_fp16(model), "fp16"
-    if precision == "int8":
-        return to_int8(
-            model,
-            calibration_loader,
-            calibration_batches=calibration_batches,
-            backend=quantization_backend,
-            metadata_path=quant_metadata_path,
-        ), "fp32"
-    msg = f"Unsupported precision '{precision}'"
-    raise ValueError(msg)
-
-
 def run_sweep(
     base_model: nn.Module,
     train_loader: DataLoader,
@@ -83,40 +59,61 @@ def run_sweep(
     output_dir: Path | None = None,
 ) -> pd.DataFrame:
     rows: list[dict] = []
+    error_rows: list[dict] = []
+
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     for pruning in pruning_levels:
         if fine_tune_epochs > 0:
-            optimizer = torch.optim.Adam(base_model.parameters(), lr=learning_rate)
-            criterion = nn.CrossEntropyLoss()
 
-            def _epoch(model: nn.Module, loader: DataLoader) -> nn.Module:
-                return train_one_epoch(model, loader, optimizer, criterion, device)
+            def _epoch(m: nn.Module, loader: DataLoader) -> nn.Module:
+                opt = torch.optim.Adam(m.parameters(), lr=learning_rate)
+                crit = nn.CrossEntropyLoss()
+                m.train()
+                for inputs, targets in loader:
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
+                    opt.zero_grad()
+                    outputs = m(inputs)
+                    loss = crit(outputs, targets)
+                    loss.backward()
+                    opt.step()
+                return m
 
-            candidate = prune_and_finetune(base_model, pruning, fine_tune_epochs, train_loader, _epoch)
+            pruned_base = prune_and_finetune(base_model, pruning, fine_tune_epochs, train_loader, _epoch)
         else:
-            candidate = structured_channel_prune(base_model, pruning)
-        candidate = candidate.to(device)
+            pruned_base = structured_channel_prune(base_model, pruning)
+
+        pruned_base = pruned_base.to(device)
 
         for precision in precisions:
             try:
-                metadata_path = None
-                if output_dir is not None and precision == "int8":
-                    metadata_path = output_dir / f"quantization_metadata_p{pruning}.json"
-                variant, metric_precision = precision_variant(
-                    candidate,
-                    precision,
-                    calibration_loader,
-                    calibration_batches,
-                    quantization_backend,
-                    metadata_path,
-                )
-                variant = variant.to(device)
+                variant = deepcopy(pruned_base)
+
+                if precision == "fp32":
+                    pass
+                elif precision == "fp16":
+                    variant = to_fp16(variant)
+                elif precision == "int8":
+                    metadata_path = None
+                    if output_dir is not None:
+                        metadata_path = output_dir / f"quantization_metadata_p{pruning}_{precision}.json"
+                    variant = to_int8(
+                        variant,
+                        calibration_loader,
+                        calibration_batches=calibration_batches,
+                        metadata_path=metadata_path,
+                    )
+                else:
+                    raise ValueError(f"Unsupported precision '{precision}'")
+
                 metrics: PerfMetrics = collect_metrics(
                     variant,
                     val_loader,
                     device,
                     power_watts=power_watts,
-                    precision=metric_precision,
+                    precision=precision,
                     latency_multiplier=latency_multiplier,
                     benchmark_repeats=benchmark_repeats,
                     benchmark_trials=benchmark_trials,
@@ -133,15 +130,20 @@ def run_sweep(
                     **asdict(metrics),
                     **violations,
                 }
-            except Exception as exc:  # defensive to preserve sweep continuity
-                row = {
+                rows.append(row)
+
+            except Exception as exc:
+                error_row = {
                     "pruning_level": pruning,
                     "precision": precision,
-                    "accepted": False,
                     "error": str(exc),
                     "active_budget_mb": active_memory_budget_mb,
                 }
-            rows.append(row)
+                error_rows.append(error_row)
+
+    if output_dir is not None and error_rows:
+        error_df = pd.DataFrame(error_rows)
+        error_df.to_csv(output_dir / "sweep_errors.csv", index=False)
 
     return pd.DataFrame(rows)
 
@@ -172,8 +174,10 @@ def save_plots(
 
     plt.figure(figsize=(7, 5))
     plt.scatter(accepted["latency_ms"], accepted["accuracy"], c="tab:blue", alpha=0.8, label="Accepted")
-    if show_error_bars and "accuracy_std" in accepted.columns:
-        plt.errorbar(accepted["latency_ms"], accepted["accuracy"], yerr=accepted["accuracy_std"], fmt="none", ecolor="tab:blue", alpha=0.35)
+    if show_error_bars and "accuracy_ci95_low" in accepted.columns:
+        yerr_low = accepted["accuracy"] - accepted["accuracy_ci95_low"]
+        yerr_high = accepted["accuracy_ci95_high"] - accepted["accuracy"]
+        plt.errorbar(accepted["latency_ms"], accepted["accuracy"], yerr=[yerr_low, yerr_high], fmt="none", ecolor="tab:blue", alpha=0.35)
     if not rejected.empty:
         plt.scatter(rejected["latency_ms"], rejected["accuracy"], c="tab:gray", alpha=0.5, marker="x", label="Rejected")
     plt.plot(latency_frontier["latency_ms"], latency_frontier["accuracy"], color="red", linewidth=2, label="Pareto")
@@ -187,8 +191,10 @@ def save_plots(
 
     plt.figure(figsize=(7, 5))
     plt.scatter(accepted["energy_proxy_j"], accepted["accuracy"], c="tab:green", alpha=0.8, label="Accepted")
-    if show_error_bars and "accuracy_std" in accepted.columns:
-        plt.errorbar(accepted["energy_proxy_j"], accepted["accuracy"], yerr=accepted["accuracy_std"], fmt="none", ecolor="tab:green", alpha=0.35)
+    if show_error_bars and "accuracy_ci95_low" in accepted.columns:
+        yerr_low = accepted["accuracy"] - accepted["accuracy_ci95_low"]
+        yerr_high = accepted["accuracy_ci95_high"] - accepted["accuracy"]
+        plt.errorbar(accepted["energy_proxy_j"], accepted["accuracy"], yerr=[yerr_low, yerr_high], fmt="none", ecolor="tab:green", alpha=0.35)
     if not rejected.empty:
         plt.scatter(rejected["energy_proxy_j"], rejected["accuracy"], c="tab:gray", alpha=0.5, marker="x", label="Rejected")
     plt.plot(energy_frontier["energy_proxy_j"], energy_frontier["accuracy"], color="red", linewidth=2, label="Pareto")

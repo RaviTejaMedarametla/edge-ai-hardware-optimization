@@ -1,6 +1,8 @@
-torch
-torchvision
-matplotlib
-pandas
-pyyaml
-pytest
+torch>=2.0.0,<2.4.0
+torchvision>=0.15.0,<0.19.0
+matplotlib>=3.5.0,<3.9.0
+pandas>=1.5.0,<2.2.0
+pyyaml>=6.0,<7.0
+pytest>=7.0,<8.0
+sphinx<7.0
+sphinx_rtd_theme

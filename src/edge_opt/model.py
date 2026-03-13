@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import warnings
+from typing import Type
 
 import numpy as np
 import torch
@@ -26,8 +27,22 @@ class SmallCNN(nn.Module):
         return self.classifier(x)
 
 
+_MODEL_REGISTRY: dict[str, Type[nn.Module]] = {
+    "SmallCNN": SmallCNN,
+}
+
+
+def get_model(name: str, **kwargs) -> nn.Module:
+    if name not in _MODEL_REGISTRY:
+        raise ValueError(f"Unknown model '{name}'. Available: {list(_MODEL_REGISTRY)}")
+    return _MODEL_REGISTRY[name](**kwargs)
+
+
+def register_model(name: str, model_cls: Type[nn.Module]) -> None:
+    _MODEL_REGISTRY[name] = model_cls
+
+
 def resolve_device(device_name: str) -> torch.device:
-    """Resolve requested device with graceful fallback and warning."""
     if device_name == "cpu":
         return torch.device("cpu")
     if device_name == "cuda":

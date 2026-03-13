@@ -28,12 +28,14 @@ class ExperimentConfig:
     num_workers: int
     benchmark_repeats: int
     memory_bandwidth_gbps: float
-    benchmark_trials: int
+    benchmark_trials: int = 3
     device: str = "cpu"
     benchmark_warmup: int = 3
     quantization_backend: str = "fbgemm"
     fine_tune_epochs: int = 0
     pareto_use_ci: bool = False
+    peak_compute_gmacs: float | None = None
+    model: str = "SmallCNN"
 
     def __post_init__(self) -> None:
         if self.batch_size <= 0 or self.epochs <= 0 or self.learning_rate <= 0:
@@ -57,6 +59,8 @@ class ExperimentConfig:
             raise ValueError("calibration_batches must be > 0")
         if self.fine_tune_epochs < 0:
             raise ValueError("fine_tune_epochs must be >= 0")
+        if self.peak_compute_gmacs is not None and self.peak_compute_gmacs <= 0:
+            raise ValueError("peak_compute_gmacs must be > 0 when provided")
 
 
 def _require(raw: dict[str, Any], key: str) -> Any:
@@ -95,4 +99,6 @@ def load_config(path: str | Path) -> ExperimentConfig:
         quantization_backend=str(raw.get("quantization_backend", "fbgemm")),
         fine_tune_epochs=int(raw.get("fine_tune_epochs", 0)),
         pareto_use_ci=bool(raw.get("pareto_use_ci", False)),
+        peak_compute_gmacs=float(raw["peak_compute_gmacs"]) if raw.get("peak_compute_gmacs") is not None else None,
+        model=str(raw.get("model", "SmallCNN")),
     )
