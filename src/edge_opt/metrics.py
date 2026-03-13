@@ -3,16 +3,18 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 from torch import nn
 from torch.utils import benchmark
 from torch.utils.data import DataLoader
 
+from edge_opt.hardware import peak_activation_memory
+
 
 @dataclass
 class PerfMetrics:
     accuracy: float
-    accuracy_std: float
     accuracy_ci95_low: float
     accuracy_ci95_high: float
     latency_ms: float
@@ -34,10 +36,31 @@ def _sync_device(device: torch.device) -> None:
         torch.mps.synchronize()
 
 
-def evaluate_accuracy(model: nn.Module, loader: DataLoader, device: torch.device, precision: str = "fp32") -> float:
+def bootstrap_ci(data: np.ndarray, statistic=np.mean, n_resamples: int = 1000, ci: float = 0.95) -> tuple[float, float, float]:
+    """Bootstrap confidence interval. Returns (mean, lower, upper)."""
+    rng = np.random.default_rng()
+    boot_stats = []
+    n = len(data)
+    for _ in range(n_resamples):
+        indices = rng.integers(0, n, size=n)
+        sample = data[indices]
+        boot_stats.append(statistic(sample))
+    boot_stats = np.array(boot_stats)
+    mean = statistic(data)
+    lower = np.percentile(boot_stats, (1 - ci) / 2 * 100)
+    upper = np.percentile(boot_stats, (1 + ci) / 2 * 100)
+    return mean, lower, upper
+
+
+def evaluate_accuracy_with_bootstrap(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    precision: str,
+    n_resamples: int = 1000,
+) -> tuple[float, float, float]:
     model.eval()
-    total = 0
-    correct = 0
+    all_correct = []
     with torch.no_grad():
         for inputs, targets in loader:
             inputs = inputs.to(device)
@@ -46,24 +69,11 @@ def evaluate_accuracy(model: nn.Module, loader: DataLoader, device: torch.device
                 inputs = inputs.half()
             outputs = model(inputs)
             pred = outputs.argmax(dim=1)
-            total += targets.size(0)
-            correct += (pred == targets).sum().item()
-    return correct / total
-
-
-def evaluate_accuracy_distribution(
-    model: nn.Module,
-    loader: DataLoader,
-    device: torch.device,
-    precision: str,
-    trials: int,
-) -> tuple[float, float, float, float]:
-    accuracies = [evaluate_accuracy(model, loader, device, precision=precision) for _ in range(trials)]
-    tensor = torch.tensor(accuracies, dtype=torch.float32)
-    mean = float(tensor.mean())
-    std = float(tensor.std(unbiased=False))
-    ci_half_width = float(1.96 * (std / max(trials**0.5, 1.0)))
-    return mean, std, max(0.0, mean - ci_half_width), min(1.0, mean + ci_half_width)
+            correct = (pred == targets).cpu().numpy().astype(int)
+            all_correct.extend(correct)
+    all_correct = np.array(all_correct)
+    mean, low, high = bootstrap_ci(all_correct, statistic=np.mean, n_resamples=n_resamples, ci=0.95)
+    return mean, low, high
 
 
 def measure_latency(model: nn.Module, sample_input: torch.Tensor, device: torch.device, num_runs: int = 100, warmup: int = 3) -> float:
@@ -105,17 +115,11 @@ def measure_latency_distribution(
 
 
 def model_memory_mb(model: nn.Module) -> float:
-    """Compute model parameter memory from the state dict only."""
     total_bytes = 0
     for tensor in model.state_dict().values():
         if isinstance(tensor, torch.Tensor):
             total_bytes += tensor.numel() * tensor.element_size()
     return total_bytes / (1024**2)
-
-
-def estimated_runtime_memory_mb(parameter_memory_mb: float) -> float:
-    """Estimate runtime memory including activations as ~1.5x parameter memory."""
-    return parameter_memory_mb * 1.5
 
 
 def memory_violations(memory_mb: float, budgets_mb: list[float]) -> dict[str, bool]:
@@ -141,13 +145,10 @@ def collect_metrics(
     if precision == "fp16":
         sample_input = sample_input.half()
 
-    accuracy, accuracy_std, ci_low, ci_high = evaluate_accuracy_distribution(
-        model,
-        loader,
-        device,
-        precision=precision,
-        trials=benchmark_trials,
+    accuracy, ci_low, ci_high = evaluate_accuracy_with_bootstrap(
+        model, loader, device, precision, n_resamples=1000
     )
+
     latency_mean, latency_median, latency_std, latency_p95 = measure_latency_distribution(
         model,
         sample_input,
@@ -157,13 +158,17 @@ def collect_metrics(
     )
     latency = latency_mean * latency_multiplier
     throughput = sample_input.shape[0] / (latency / 1000.0)
+
     param_memory = model_memory_mb(model)
-    runtime_memory = estimated_runtime_memory_mb(param_memory)
+    batch_size = sample_input.shape[0]
+    input_shape = sample_input.shape[1:]
+    peak_mem = peak_activation_memory(model, batch_size, input_shape)
+    runtime_memory = param_memory + peak_mem
+
     energy_proxy = (latency / 1000.0) * power_watts
 
     return PerfMetrics(
         accuracy=accuracy,
-        accuracy_std=accuracy_std,
         accuracy_ci95_low=ci_low,
         accuracy_ci95_high=ci_high,
         latency_ms=latency,

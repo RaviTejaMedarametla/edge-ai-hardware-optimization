@@ -52,16 +52,18 @@ def to_int8(
             "backend": backend_name,
             "calibration_batches": calibration_batches,
             "quantized": quantized is not float_model,
-            "scale": None,
-            "zero_point": None,
+            "modules": {},
         }
-        for _, module in quantized.named_modules():
+        for name, module in quantized.named_modules():
             scale = getattr(module, "scale", None)
             zero_point = getattr(module, "zero_point", None)
-            if scale is not None and zero_point is not None:
-                metadata["scale"] = float(scale)
-                metadata["zero_point"] = int(zero_point)
-                break
+            metadata["modules"][name or "root"] = {
+                "type": module.__class__.__name__,
+                "has_scale": scale is not None,
+                "has_zero_point": zero_point is not None,
+                "scale": float(scale) if scale is not None else None,
+                "zero_point": int(zero_point) if zero_point is not None else None,
+            }
 
         path = Path(metadata_path)
         path.parent.mkdir(parents=True, exist_ok=True)

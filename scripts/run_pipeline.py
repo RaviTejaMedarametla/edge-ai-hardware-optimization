@@ -14,7 +14,7 @@ from edge_opt.deploy import deployment_simulation
 from edge_opt.experiments import pareto_frontier, run_sweep, save_plots, train_model
 from edge_opt.hardware import estimate_layerwise_stats, precision_tradeoff_table, save_hardware_artifacts, summarize_hardware
 from edge_opt.metrics import collect_metrics, memory_violations
-from edge_opt.model import SmallCNN, resolve_device, set_deterministic
+from edge_opt.model import get_model, resolve_device, set_deterministic
 from edge_opt.reporting import build_summary, write_outputs
 
 
@@ -55,7 +55,7 @@ def main() -> None:
         num_workers=cfg.num_workers,
     )
 
-    baseline_model = SmallCNN()
+    baseline_model = get_model(cfg.model)
     baseline_model = train_model(
         baseline_model,
         train_loader,
@@ -104,11 +104,14 @@ def main() -> None:
     energy_frontier = pareto_frontier(sweep_df, x_col="energy_proxy_j", use_ci=cfg.pareto_use_ci)
     save_plots(sweep_df, latency_frontier, energy_frontier, output_dir, show_error_bars=cfg.pareto_use_ci)
 
-    layerwise_df = estimate_layerwise_stats(baseline_model, batch_size=cfg.batch_size)
+    sample_batch, _ = next(iter(val_loader))
+    input_shape = sample_batch.shape[1:]
+    layerwise_df = estimate_layerwise_stats(baseline_model, batch_size=cfg.batch_size, input_shape=input_shape)
     hardware_summary = summarize_hardware(
         layerwise_df,
         latency_ms=baseline_metrics.latency_ms,
         memory_bandwidth_gbps=cfg.memory_bandwidth_gbps,
+        peak_compute_gmacs=cfg.peak_compute_gmacs,
     )
     precision_df = precision_tradeoff_table(sweep_df)
     save_hardware_artifacts(output_dir, layerwise_df, precision_df, hardware_summary)
@@ -143,6 +146,7 @@ def main() -> None:
         "dataloader_seed": cfg.dataloader_seed,
         "device_requested": cfg.device,
         "device_resolved": str(device),
+        "model": cfg.model,
     }
 
     write_outputs(output_dir, sweep_df, latency_frontier, energy_frontier, summary)

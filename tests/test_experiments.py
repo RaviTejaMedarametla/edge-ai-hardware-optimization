@@ -26,7 +26,7 @@ def test_pareto_frontier_filters_dominated_points() -> None:
     assert list(frontier["latency_ms"]) == [8.0, 10.0]
 
 
-def test_run_sweep_captures_variant_errors() -> None:
+def test_run_sweep_captures_variant_errors(tmp_path: Path) -> None:
     loader = _dummy_loader()
     model = SmallCNN()
     out = run_sweep(
@@ -44,8 +44,10 @@ def test_run_sweep_captures_variant_errors() -> None:
         latency_multiplier=1.0,
         benchmark_repeats=1,
         benchmark_trials=1,
-        output_dir=Path("outputs/test"),
+        output_dir=tmp_path,
     )
-    assert len(out) == 2
-    assert out["error"].isna().sum() == 1
-    assert out["error"].notna().sum() == 1
+    assert len(out) == 1
+    assert out["error"].isna().all()
+    errors = pd.read_csv(tmp_path / "sweep_errors.csv")
+    assert len(errors) == 1
+    assert "Unsupported precision" in errors.loc[0, "error"]
